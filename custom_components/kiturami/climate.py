@@ -14,7 +14,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.device_registry import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from . import KituramiConfigEntry, KrbAPI, DOMAIN
-from .const import TITLE, MODEL, MIN_TEMP, MAX_TEMP
+from .const import TITLE, MODEL, MIN_TEMP, MAX_TEMP, MIN_TEMP_WATER, MAX_TEMP_WATER
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -22,6 +22,7 @@ _LOGGER = logging.getLogger(__name__)
 class PresetMode(StrEnum):
     """Preset modes."""
     HEAT = "난방"
+    ONDOL = "온돌"
     BATH = "목욕"
     RESERVATION = "24시간 예약"
     RESERVATION_REPEAT = "반복 예약"
@@ -61,17 +62,16 @@ class KituramiClimate(ClimateEntity):
             model=MODEL,
         )
         self._attr_hvac_modes = [HVACMode.OFF, HVACMode.HEAT]
-        self._attr_preset_modes = [PresetMode.HEAT, PresetMode.BATH, PresetMode.RESERVATION,
+        self._attr_preset_modes = [PresetMode.HEAT, PresetMode.ONDOL, PresetMode.BATH, PresetMode.RESERVATION,
                                    PresetMode.RESERVATION_REPEAT, PresetMode.AWAY]
         self._attr_precision = 1
-        self._attr_min_temp = MIN_TEMP
-        self._attr_max_temp = MAX_TEMP
         self._attr_target_temperature_step = 1
         self._attr_temperature_unit = UnitOfTemperature.CELSIUS
 
         self._req_mode: Optional[str] = None
         self._alive = {}
         self._result = {}
+        self._ondol_result = {}
         self._last_updated: Optional[datetime.datetime] = None
 
     @property
@@ -86,12 +86,26 @@ class KituramiClimate(ClimateEntity):
         }
 
     @property
+    def min_temp(self):
+        """현재 모드 기준 최소 설정 온도. 온돌이면 난방수온 범위."""
+        if self._result.get('deviceMode') == '0104':
+            return MIN_TEMP_WATER
+        return MIN_TEMP
+
+    @property
+    def max_temp(self):
+        """현재 모드 기준 최대 설정 온도. 온돌이면 난방수온 범위."""
+        if self._result.get('deviceMode') == '0104':
+            return MAX_TEMP_WATER
+        return MAX_TEMP
+
+    @property
     def supported_features(self):
         """지원되는 기능 목록을 반환합니다."""
         features = 0
         if self.is_on:
             features |= ClimateEntityFeature.PRESET_MODE
-        if self.preset_mode == PresetMode.HEAT:
+        if self.preset_mode in (PresetMode.HEAT, PresetMode.ONDOL):
             features |= ClimateEntityFeature.TARGET_TEMPERATURE
         return features
 
@@ -113,6 +127,8 @@ class KituramiClimate(ClimateEntity):
     @property
     def target_temperature(self):
         """히터가 도달하려고 하는 온도를 반환합니다."""
+        if self._result.get('deviceMode') == '0104' and self._ondol_result.get('value'):
+            return int(self._ondol_result['value'], 16)
         return int(self._result['value'], 16)
 
     @property
@@ -128,8 +144,12 @@ class KituramiClimate(ClimateEntity):
             await self._api.async_turn_on(self._node_id)
         if (temperature := kwargs.get(ATTR_TEMPERATURE)) is None:
             return
-        self._req_mode = '0102'
-        await self._api.async_mode_heat(self._parent_id, self._node_id, '{:X}'.format(int(temperature)))
+        if self.preset_mode == PresetMode.ONDOL:
+            self._req_mode = '0104'
+            await self._api.async_mode_ondol(self._parent_id, self._node_id, '{:X}'.format(int(temperature)))
+        else:
+            self._req_mode = '0102'
+            await self._api.async_mode_heat(self._parent_id, self._node_id, '{:X}'.format(int(temperature)))
 
     @property
     def preset_mode(self):
@@ -137,6 +157,8 @@ class KituramiClimate(ClimateEntity):
         operation_mode = self._result['deviceMode']
         if operation_mode == '0102':
             return PresetMode.HEAT
+        elif operation_mode == '0104':
+            return PresetMode.ONDOL
         elif operation_mode == '0105':
             return PresetMode.BATH
         elif operation_mode == '0107':
@@ -157,6 +179,9 @@ class KituramiClimate(ClimateEntity):
         if preset_mode == PresetMode.HEAT:
             self._req_mode = '0102'
             await self._api.async_mode_heat(self._parent_id, self._node_id)
+        elif preset_mode == PresetMode.ONDOL:
+            self._req_mode = '0104'
+            await self._api.async_mode_ondol(self._parent_id, self._node_id)
         elif preset_mode == PresetMode.BATH:
             self._req_mode = '0105'
             await self._api.async_mode_bath(self._parent_id, self._node_id)
@@ -197,5 +222,14 @@ class KituramiClimate(ClimateEntity):
                 self._last_updated = now
                 break
             await asyncio.sleep(1)
+
+        if self._result.get('deviceMode') == '0104':
+            try:
+                self._ondol_result = await self._api.async_device_mode_info(
+                    self._parent_id, self._node_id, '0104')
+            except Exception as ex:
+                _LOGGER.warning(f"온돌 모드 정보 조회 실패: {ex}")
+        else:
+            self._ondol_result = {}
 
         self._req_mode = None

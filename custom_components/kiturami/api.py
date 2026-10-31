@@ -126,6 +126,14 @@ class KrbAPI:
         body = f'01000000{target_temp}00'
         await self.async_device_control(node_id, '0102', body)
 
+    async def async_mode_ondol(self, parent_id: str, node_id: str, target_temp: Optional[str] = None):
+        """장치를 온돌(난방수온) 모드로 설정합니다. (deviceMode 0104, 실기기 캡처로 검증)"""
+        if not target_temp:
+            response = await self.async_device_mode_info(parent_id, node_id, '0104')
+            target_temp = response['value']
+        body = f'01000000{target_temp}00'
+        await self.async_device_control(node_id, '0104', body)
+
     async def async_mode_bath(self, parent_id: str, node_id: str):
         """장치를 목욕 모드로 설정합니다."""
         response = await self.async_device_mode_info(parent_id, node_id, '0105')

@@ -146,10 +146,10 @@ class KituramiClimate(ClimateEntity):
             return
         if self.preset_mode == PresetMode.ONDOL:
             self._req_mode = '0104'
-            await self._api.async_mode_ondol(self._parent_id, self._node_id, '{:X}'.format(int(temperature)))
+            await self._api.async_mode_ondol(self._parent_id, self._node_id, '{:02X}'.format(int(temperature)))
         else:
             self._req_mode = '0102'
-            await self._api.async_mode_heat(self._parent_id, self._node_id, '{:X}'.format(int(temperature)))
+            await self._api.async_mode_heat(self._parent_id, self._node_id, '{:02X}'.format(int(temperature)))
 
     @property
     def preset_mode(self):

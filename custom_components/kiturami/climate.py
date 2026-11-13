@@ -51,7 +51,7 @@ class KituramiClimate(ClimateEntity):
         self._min_time_between_updates: datetime.timedelta = timedelta(minutes=_min_time_between_updates)
         self._parent_id = parent_id
         self._node_id = node_id
-        self.entity_id = f"climate.{DOMAIN}_{node_id.replace(':', '_')}"
+        self.entity_id = f"climate.{DOMAIN}_{node_id.replace(':', '_').lower()}"
         self._attr_unique_id = f"{DOMAIN}-{node_id}"
         self._attr_name = f'{TITLE} {name}'
         self._attr_device_info = DeviceInfo(
@@ -66,7 +66,7 @@ class KituramiClimate(ClimateEntity):
                                    PresetMode.RESERVATION_REPEAT, PresetMode.AWAY]
         self._attr_precision = 1
         self._attr_target_temperature_step = 1
-        self._attr_temperature_unit = UnitOfTemperature.CELSIUS
+        self._attr_native_temperature_unit = UnitOfTemperature.CELSIUS
 
         self._req_mode: Optional[str] = None
         self._alive = {}
@@ -120,12 +120,12 @@ class KituramiClimate(ClimateEntity):
         return self._result['deviceMode'] != '0101'
 
     @property
-    def current_temperature(self):
+    def native_current_temperature(self):
         """현재 온도를 반환합니다."""
         return int(self._result['currentTemp'], 16)
 
     @property
-    def target_temperature(self):
+    def native_target_temperature(self):
         """히터가 도달하려고 하는 온도를 반환합니다."""
         if self._result.get('deviceMode') == '0104' and self._ondol_result.get('value'):
             return int(self._ondol_result['value'], 16)
